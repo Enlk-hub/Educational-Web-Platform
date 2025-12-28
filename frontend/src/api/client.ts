@@ -1,0 +1,134 @@
+import { Homework, Question, TestResult, User, VideoLesson, Subject, Submission } from '../types';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
+const TOKEN_KEY = 'entbridge_token';
+const USER_KEY = 'entbridge_user';
+
+export const getStoredToken = () => localStorage.getItem(TOKEN_KEY);
+
+export const getStoredUser = (): User | null => {
+  const raw = localStorage.getItem(USER_KEY);
+  return raw ? (JSON.parse(raw) as User) : null;
+};
+
+export const storeAuth = (token: string, user: User) => {
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+};
+
+export const clearAuth = () => {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+};
+
+const buildHeaders = () => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  const token = getStoredToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+};
+
+const request = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      ...buildHeaders(),
+      ...(options.headers || {}),
+    },
+  });
+
+  if (!response.ok) {
+    let errorMessage = 'Ошибка запроса';
+    try {
+      const errorBody = await response.json();
+      errorMessage = errorBody?.message || errorMessage;
+    } catch {
+      // ignore
+    }
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
+};
+
+export const api = {
+  login: (username: string, password: string) =>
+    request<{ token: string; user: User }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  register: (name: string, email: string, username: string, password: string) =>
+    request<{ token: string; user: User }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ full_name: name, email, username, password }),
+    }),
+  getMe: () => request<User>('/profile/me'),
+  updateProfile: (name: string, email: string) =>
+    request<User>('/profile', {
+      method: 'PUT',
+      body: JSON.stringify({ name, email }),
+    }),
+  changePassword: (oldPassword: string, newPassword: string) =>
+    request<{ message: string }>('/profile/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ oldPassword, newPassword }),
+    }),
+  getProfileResults: (page: number, size: number) =>
+    request<{ content: TestResult[]; totalElements: number }>(
+      `/profile/results?page=${page}&size=${size}`
+    ),
+  getSubjects: () => request<Subject[]>('/subjects'),
+  getQuestions: (subjectId: string) =>
+    request<Question[]>(`/tests/questions?subjectId=${subjectId}`),
+  submitTest: (subjectId: string, answers: { questionId: string; selectedOptionId?: string }[]) =>
+    request<TestResult>('/tests/submit', {
+      method: 'POST',
+      body: JSON.stringify({ subjectId, answers }),
+    }),
+  getVideos: (subjectId?: string) =>
+    request<VideoLesson[]>(subjectId ? `/videos?subjectId=${subjectId}` : '/videos'),
+  getHomework: () => request<Homework[]>('/homework'),
+  submitHomework: (homeworkId: string, content: string) =>
+    request<Submission>(`/homework/${homeworkId}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    }),
+  admin: {
+    getUsers: () => request<User[]>('/admin/users'),
+    getResults: () => request<TestResult[]>('/admin/results'),
+    getHomework: () => request<Homework[]>('/admin/homework'),
+    createHomework: (payload: { title: string; description: string; subjectId: string; dueDate: string }) =>
+      request<Homework>('/admin/homework', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    updateHomework: (homeworkId: string, payload: { title: string; description: string; subjectId: string; dueDate: string }) =>
+      request<Homework>(`/admin/homework/${homeworkId}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }),
+    deleteHomework: (homeworkId: string) =>
+      request<{ message: string }>(`/admin/homework/${homeworkId}`, {
+        method: 'DELETE',
+      }),
+    reviewSubmission: (submissionId: string, payload: { status: string; feedback?: string; grade?: number }) =>
+      request<Submission>(`/admin/homework/submissions/${submissionId}/review`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    createSubject: (payload: { code: string; title: string; iconUrl?: string; isMandatory: boolean; category?: string; maxScore?: number }) =>
+      request<Subject>('/admin/subjects', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    createQuestion: (payload: { subjectId: string; text: string; points?: number; explanation?: string; options: { text: string; isCorrect: boolean }[] }) =>
+      request<{ id: string; message: string }>('/admin/questions', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+  },
+};

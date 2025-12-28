@@ -1,0 +1,39 @@
+### Java / Spring ###
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.iml
+
+### Maven ###
+.mvn/wrapper/maven-wrapper.jar
+dependency-reduced-pom.xml
+
+### IDEs ###
+.idea/
+.project
+.classpath
+.settings/
+*.ipr
+*.iws
+
+### Logs ###
+*.log
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Node / Vite ###
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+### Local env ###
+.env
+.env.*
+!.env.example
+
+### Docker ###
+docker-compose.override.yml
