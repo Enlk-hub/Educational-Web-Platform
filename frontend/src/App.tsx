@@ -10,6 +10,7 @@ import { ProfilePage } from './components/ProfilePage';
 import { VideosPage } from './components/VideosPage';
 import { AboutPage } from './components/AboutPage';
 import { AdminPage } from './components/AdminPage';
+import { NotFoundPage } from './components/NotFoundPage';
 import { Subject, TestResult } from './types';
 import { Toaster } from './components/ui/sonner';
 import './styles/globals.css';
@@ -57,7 +58,7 @@ export default function App() {
       case 'admin':
         return <AdminPage />;
       default:
-        return <HomePage onNavigate={handleNavigate} />;
+        return <NotFoundPage onNavigate={handleNavigate} />;
     }
   };
 

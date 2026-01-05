@@ -40,4 +40,10 @@ public final class AdminDtos {
             @NotBlank String text,
             @NotNull Boolean isCorrect
     ) {}
+
+    public static record ImportQuestionsResponse(
+            int created,
+            int skipped,
+            List<String> errors
+    ) {}
 }

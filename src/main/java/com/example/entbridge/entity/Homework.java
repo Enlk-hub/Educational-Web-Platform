@@ -34,4 +34,7 @@ public class Homework {
 
     @OneToMany(mappedBy = "homework", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<HomeworkSubmission> submissions = new ArrayList<>();
+
+    @OneToMany(mappedBy = "homework", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<HomeworkAttachment> attachments = new ArrayList<>();
 }

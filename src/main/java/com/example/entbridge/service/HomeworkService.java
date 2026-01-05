@@ -2,18 +2,23 @@ package com.example.entbridge.service;
 
 import com.example.entbridge.dto.HomeworkDtos;
 import com.example.entbridge.entity.Homework;
+import com.example.entbridge.entity.HomeworkAttachment;
 import com.example.entbridge.entity.HomeworkSubmission;
+import com.example.entbridge.entity.HomeworkSubmissionAttachment;
 import com.example.entbridge.entity.HomeworkSubmissionStatus;
 import com.example.entbridge.entity.Subject;
 import com.example.entbridge.entity.User;
 import com.example.entbridge.exception.ApiException;
+import com.example.entbridge.repository.HomeworkAttachmentRepository;
 import com.example.entbridge.repository.HomeworkRepository;
+import com.example.entbridge.repository.HomeworkSubmissionAttachmentRepository;
 import com.example.entbridge.repository.HomeworkSubmissionRepository;
 import com.example.entbridge.repository.SubjectRepository;
 import com.example.entbridge.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -26,17 +31,26 @@ import java.util.stream.Collectors;
 public class HomeworkService {
     private final HomeworkRepository homeworkRepository;
     private final HomeworkSubmissionRepository submissionRepository;
+    private final HomeworkAttachmentRepository homeworkAttachmentRepository;
+    private final HomeworkSubmissionAttachmentRepository submissionAttachmentRepository;
     private final SubjectRepository subjectRepository;
     private final UserRepository userRepository;
+    private final FileStorageService fileStorageService;
 
     public HomeworkService(HomeworkRepository homeworkRepository,
                            HomeworkSubmissionRepository submissionRepository,
+                           HomeworkAttachmentRepository homeworkAttachmentRepository,
+                           HomeworkSubmissionAttachmentRepository submissionAttachmentRepository,
                            SubjectRepository subjectRepository,
-                           UserRepository userRepository) {
+                           UserRepository userRepository,
+                           FileStorageService fileStorageService) {
         this.homeworkRepository = homeworkRepository;
         this.submissionRepository = submissionRepository;
+        this.homeworkAttachmentRepository = homeworkAttachmentRepository;
+        this.submissionAttachmentRepository = submissionAttachmentRepository;
         this.subjectRepository = subjectRepository;
         this.userRepository = userRepository;
+        this.fileStorageService = fileStorageService;
     }
 
     @Transactional(readOnly = true)
@@ -115,7 +129,7 @@ public class HomeworkService {
     }
 
     @Transactional
-    public HomeworkDtos.SubmissionDto submit(Long userId, Long homeworkId, HomeworkDtos.SubmitHomeworkRequest request) {
+    public HomeworkDtos.SubmissionDto submit(Long userId, Long homeworkId, String content, List<MultipartFile> files) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Пользователь не найден"));
         Homework homework = homeworkRepository.findById(homeworkId)
@@ -129,11 +143,34 @@ public class HomeworkService {
                     return s;
                 });
 
-        submission.setContent(request.content());
+        if (submission.getId() != null
+                && submission.getStatus() != null
+                && submission.getStatus() != HomeworkSubmissionStatus.NEEDS_REVISION) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SUBMISSION_LOCKED", "Ответ уже отправлен, дождитесь проверки");
+        }
+
+        boolean hasText = hasMeaningfulText(content);
+        boolean hasNewFiles = files != null && files.stream().anyMatch(file -> file != null && !file.isEmpty());
+        boolean hasExistingText = hasMeaningfulText(submission.getContent());
+        boolean hasExistingFiles = submission.getAttachments() != null && !submission.getAttachments().isEmpty();
+        if (!hasText && !hasNewFiles && !hasExistingText && !hasExistingFiles) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "EMPTY_SUBMISSION", "Добавьте текст или файл");
+        }
+        if (content != null) {
+            submission.setContent(hasText ? content : null);
+        }
         submission.setStatus(HomeworkSubmissionStatus.SUBMITTED);
         submission.setSubmittedAt(Instant.now());
         submission.setUpdatedAt(Instant.now());
         submissionRepository.save(submission);
+        if (hasNewFiles) {
+            List<HomeworkSubmissionAttachment> attachments = files.stream()
+                    .filter(file -> file != null && !file.isEmpty())
+                    .map(file -> storeSubmissionAttachment(submission, file))
+                    .toList();
+            submissionAttachmentRepository.saveAll(attachments);
+            submission.getAttachments().addAll(attachments);
+        }
         return toDto(submission);
     }
 
@@ -148,6 +185,46 @@ public class HomeworkService {
         submission.setUpdatedAt(Instant.now());
         submissionRepository.save(submission);
         return toDto(submission);
+    }
+
+    @Transactional
+    public HomeworkDtos.HomeworkDto addHomeworkAttachments(Long homeworkId, List<MultipartFile> files) {
+        Homework homework = homeworkRepository.findById(homeworkId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "HOMEWORK_NOT_FOUND", "Задание не найдено"));
+        if (files == null || files.stream().noneMatch(file -> file != null && !file.isEmpty())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "FILES_EMPTY", "Выберите файл");
+        }
+        List<HomeworkAttachment> attachments = files.stream()
+                .filter(file -> file != null && !file.isEmpty())
+                .map(file -> storeHomeworkAttachment(homework, file))
+                .toList();
+        homeworkAttachmentRepository.saveAll(attachments);
+        homework.getAttachments().addAll(attachments);
+        return toDto(homework, new ArrayList<>(homework.getSubmissions()));
+    }
+
+    @Transactional(readOnly = true)
+    public FileDownload getHomeworkAttachment(Long attachmentId) {
+        HomeworkAttachment attachment = homeworkAttachmentRepository.findById(attachmentId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ATTACHMENT_NOT_FOUND", "Файл не найден"));
+        return new FileDownload(fileStorageService.resolve(attachment.getStoragePath()),
+                attachment.getContentType(),
+                attachment.getOriginalName());
+    }
+
+    @Transactional(readOnly = true)
+    public FileDownload getSubmissionAttachment(Long userId, boolean isAdmin, Long attachmentId) {
+        HomeworkSubmissionAttachment attachment = submissionAttachmentRepository.findById(attachmentId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ATTACHMENT_NOT_FOUND", "Файл не найден"));
+        HomeworkSubmission submission = attachment.getSubmission();
+        if (!isAdmin && (submission == null || submission.getUser() == null
+                || submission.getUser().getId() == null
+                || !submission.getUser().getId().equals(userId))) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Нет доступа к файлу");
+        }
+        return new FileDownload(fileStorageService.resolve(attachment.getStoragePath()),
+                attachment.getContentType(),
+                attachment.getOriginalName());
     }
 
     private HomeworkSubmissionStatus parseStatus(String value) {
@@ -172,7 +249,10 @@ public class HomeworkService {
                 subjectId,
                 homework.getDueDate(),
                 homework.getAssignedBy(),
-                submissionDtos
+                submissionDtos,
+                homework.getAttachments() == null
+                        ? List.of()
+                        : homework.getAttachments().stream().map(this::toAttachmentDto).toList()
         );
     }
 
@@ -194,7 +274,66 @@ public class HomeworkService {
                 submission.getSubmittedAt(),
                 submission.getStatus() == null ? null : submission.getStatus().name(),
                 submission.getGrade(),
-                submission.getFeedback()
+                submission.getFeedback(),
+                submission.getAttachments() == null
+                        ? List.of()
+                        : submission.getAttachments().stream().map(this::toAttachmentDto).toList()
         );
     }
+
+    private HomeworkDtos.AttachmentDto toAttachmentDto(HomeworkAttachment attachment) {
+        return new HomeworkDtos.AttachmentDto(
+                attachment.getId() == null ? null : attachment.getId().toString(),
+                attachment.getOriginalName(),
+                attachment.getContentType(),
+                attachment.getSize(),
+                "/homework/attachments/" + attachment.getId() + "/download",
+                attachment.getUploadedAt()
+        );
+    }
+
+    private HomeworkDtos.AttachmentDto toAttachmentDto(HomeworkSubmissionAttachment attachment) {
+        return new HomeworkDtos.AttachmentDto(
+                attachment.getId() == null ? null : attachment.getId().toString(),
+                attachment.getOriginalName(),
+                attachment.getContentType(),
+                attachment.getSize(),
+                "/homework/submissions/attachments/" + attachment.getId() + "/download",
+                attachment.getUploadedAt()
+        );
+    }
+
+    private HomeworkAttachment storeHomeworkAttachment(Homework homework, MultipartFile file) {
+        FileStorageService.StoredFile storedFile = fileStorageService.store("homework", file);
+        HomeworkAttachment attachment = new HomeworkAttachment();
+        attachment.setHomework(homework);
+        attachment.setOriginalName(storedFile.originalName());
+        attachment.setStoragePath(storedFile.storagePath());
+        attachment.setContentType(storedFile.contentType());
+        attachment.setSize(storedFile.size());
+        attachment.setUploadedAt(Instant.now());
+        return attachment;
+    }
+
+    private HomeworkSubmissionAttachment storeSubmissionAttachment(HomeworkSubmission submission, MultipartFile file) {
+        FileStorageService.StoredFile storedFile = fileStorageService.store("submissions", file);
+        HomeworkSubmissionAttachment attachment = new HomeworkSubmissionAttachment();
+        attachment.setSubmission(submission);
+        attachment.setOriginalName(storedFile.originalName());
+        attachment.setStoragePath(storedFile.storagePath());
+        attachment.setContentType(storedFile.contentType());
+        attachment.setSize(storedFile.size());
+        attachment.setUploadedAt(Instant.now());
+        return attachment;
+    }
+
+    private boolean hasMeaningfulText(String content) {
+        if (content == null) {
+            return false;
+        }
+        String stripped = content.replaceAll("<[^>]*>", "").trim();
+        return !stripped.isEmpty();
+    }
+
+    public record FileDownload(java.nio.file.Path path, String contentType, String originalName) {}
 }

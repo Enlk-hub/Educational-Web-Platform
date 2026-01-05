@@ -11,6 +11,8 @@ import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.MediaType;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -66,6 +68,12 @@ public class AdminController {
         return adminService.reviewSubmission(submissionId, request);
     }
 
+    @PostMapping(value = "/homework/{homeworkId}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public HomeworkDtos.HomeworkDto addHomeworkAttachments(@PathVariable Long homeworkId,
+                                                           @RequestPart("files") List<MultipartFile> files) {
+        return adminService.addHomeworkAttachments(homeworkId, files);
+    }
+
     @PostMapping("/subjects")
     public SubjectDto createSubject(@RequestBody @Valid AdminDtos.CreateSubjectRequest request) {
         return subjectMapper.toDto(adminService.createSubject(request));
@@ -75,5 +83,11 @@ public class AdminController {
     public Map<String, String> createQuestion(@RequestBody @Valid AdminDtos.CreateQuestionRequest request) {
         var question = adminService.createQuestion(request);
         return Map.of("id", question.getId().toString(), "message", "Вопрос создан");
+    }
+
+    @PostMapping(value = "/questions/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public AdminDtos.ImportQuestionsResponse importQuestions(@RequestPart("file") MultipartFile file,
+                                                             @RequestPart("subjectId") String subjectId) {
+        return adminService.importQuestions(subjectId, file);
     }
 }

@@ -54,6 +54,7 @@ export interface Homework {
   dueDate: string;
   assignedBy: string;
   submissions: Submission[];
+  attachments: Attachment[];
 }
 
 export interface Submission {
@@ -61,11 +62,21 @@ export interface Submission {
   homeworkId: string;
   userId: string;
   userName: string;
-  content: string;
+  content: string | null;
   submittedAt: string;
   status?: 'SUBMITTED' | 'NEEDS_REVISION' | 'APPROVED';
   grade?: number;
   feedback?: string;
+  attachments: Attachment[];
+}
+
+export interface Attachment {
+  id: string;
+  name: string;
+  contentType?: string;
+  size?: number;
+  downloadUrl: string;
+  uploadedAt?: string;
 }
 
 export interface VideoLesson {

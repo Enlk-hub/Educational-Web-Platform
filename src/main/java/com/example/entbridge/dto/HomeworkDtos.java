@@ -25,7 +25,16 @@ public final class HomeworkDtos {
     ) {}
 
     public static record SubmitHomeworkRequest(
-            @NotBlank String content
+            String content
+    ) {}
+
+    public static record AttachmentDto(
+            String id,
+            String name,
+            @JsonProperty("contentType") String contentType,
+            Long size,
+            @JsonProperty("downloadUrl") String downloadUrl,
+            @JsonProperty("uploadedAt") Instant uploadedAt
     ) {}
 
     public static record ReviewSubmissionRequest(
@@ -43,7 +52,8 @@ public final class HomeworkDtos {
             @JsonProperty("submittedAt") Instant submittedAt,
             String status,
             Integer grade,
-            String feedback
+            String feedback,
+            List<AttachmentDto> attachments
     ) {}
 
     public static record HomeworkDto(
@@ -53,6 +63,7 @@ public final class HomeworkDtos {
             @JsonProperty("subjectId") String subjectId,
             @JsonProperty("dueDate") LocalDate dueDate,
             @JsonProperty("assignedBy") String assignedBy,
-            List<SubmissionDto> submissions
+            List<SubmissionDto> submissions,
+            List<AttachmentDto> attachments
     ) {}
 }

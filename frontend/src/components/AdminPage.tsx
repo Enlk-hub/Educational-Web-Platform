@@ -11,10 +11,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '../api/client';
-import { Homework, Subject, TestResult, User } from '../types';
+import { api, downloadWithAuth } from '../api/client';
+import { Homework, Subject, TestResult, User, Attachment } from '../types';
 import { FileText, Users, BarChart, Plus, Calendar, CheckCircle, Edit, Trash2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
+import { RichTextEditor } from './RichTextEditor';
 
 export const AdminPage: React.FC = () => {
   const { user } = useAuth();
@@ -22,6 +23,9 @@ export const AdminPage: React.FC = () => {
   const [isEditingHomework, setIsEditingHomework] = useState(false);
   const [editingHomework, setEditingHomework] = useState<Homework | null>(null);
   const [reviewHomeworkId, setReviewHomeworkId] = useState<string | null>(null);
+  const [newHomeworkFiles, setNewHomeworkFiles] = useState<File[]>([]);
+  const [editHomeworkFiles, setEditHomeworkFiles] = useState<File[]>([]);
+  const [homeworkAttachmentFiles, setHomeworkAttachmentFiles] = useState<Record<string, File[]>>({});
   const [newHomework, setNewHomework] = useState({
     title: '',
     description: '',
@@ -56,6 +60,10 @@ export const AdminPage: React.FC = () => {
   const [homework, setHomework] = useState<Homework[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [importSubjectId, setImportSubjectId] = useState('');
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importReport, setImportReport] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     if (!user?.isAdmin) return;
@@ -99,7 +107,10 @@ export const AdminPage: React.FC = () => {
     }
 
     try {
-      const created = await api.admin.createHomework(newHomework);
+      let created = await api.admin.createHomework(newHomework);
+      if (newHomeworkFiles.length > 0) {
+        created = await api.admin.uploadHomeworkAttachments(created.id, newHomeworkFiles);
+      }
       setHomework((prev) => [created, ...prev]);
       toast('Домашнее задание успешно добавлено');
       setIsAddingHomework(false);
@@ -109,6 +120,7 @@ export const AdminPage: React.FC = () => {
         subjectId: '',
         dueDate: '',
       });
+      setNewHomeworkFiles([]);
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Ошибка создания задания');
     }
@@ -122,6 +134,7 @@ export const AdminPage: React.FC = () => {
       subjectId: task.subjectId,
       dueDate: task.dueDate.slice(0, 10),
     });
+    setEditHomeworkFiles([]);
     setIsEditingHomework(true);
   };
 
@@ -132,11 +145,15 @@ export const AdminPage: React.FC = () => {
       return;
     }
     try {
-      const updated = await api.admin.updateHomework(editingHomework.id, editHomework);
+      let updated = await api.admin.updateHomework(editingHomework.id, editHomework);
+      if (editHomeworkFiles.length > 0) {
+        updated = await api.admin.uploadHomeworkAttachments(editingHomework.id, editHomeworkFiles);
+      }
       setHomework((prev) => prev.map((hw) => (hw.id === updated.id ? updated : hw)));
       toast('Задание обновлено');
       setIsEditingHomework(false);
       setEditingHomework(null);
+      setEditHomeworkFiles([]);
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Ошибка обновления задания');
     }
@@ -245,6 +262,32 @@ export const AdminPage: React.FC = () => {
     }
   };
 
+  const handleDownload = async (file: Attachment) => {
+    try {
+      await downloadWithAuth(file.downloadUrl, file.name);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Ошибка загрузки файла');
+    }
+  };
+
+  const handleImportQuestions = async () => {
+    if (!importSubjectId || !importFile) {
+      toast('Выберите предмет и файл');
+      return;
+    }
+    setIsImporting(true);
+    setImportReport(null);
+    try {
+      const report = await api.admin.importQuestions(importSubjectId, importFile);
+      setImportReport(report);
+      toast(`Импортировано: ${report.created}, пропущено: ${report.skipped}`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Ошибка импорта');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const totalStudents = users.filter(u => !u.isAdmin).length;
   const totalTests = results.length;
   const totalHomework = homework.length;
@@ -333,7 +376,7 @@ export const AdminPage: React.FC = () => {
         </div>
 
         <Tabs defaultValue="homework" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="flex w-full grid-cols-4">
             <TabsTrigger value="homework">Домашние задания</TabsTrigger>
             <TabsTrigger value="students">Студенты</TabsTrigger>
             <TabsTrigger value="results">Результаты тестов</TabsTrigger>
@@ -377,12 +420,11 @@ export const AdminPage: React.FC = () => {
 
                         <div className="space-y-2">
                           <Label htmlFor="description">Описание</Label>
-                          <Textarea
-                            id="description"
+                          <RichTextEditor
                             value={newHomework.description}
-                            onChange={(e) => setNewHomework({ ...newHomework, description: e.target.value })}
+                            onChange={(value) => setNewHomework({ ...newHomework, description: value })}
                             placeholder="Подробное описание задания..."
-                            rows={4}
+                            minHeight={140}
                           />
                         </div>
 
@@ -410,6 +452,19 @@ export const AdminPage: React.FC = () => {
                             value={newHomework.dueDate}
                             onChange={(e) => setNewHomework({ ...newHomework, dueDate: e.target.value })}
                           />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Файлы задания</Label>
+                          <Input
+                            type="file"
+                            multiple
+                            onChange={(event) => setNewHomeworkFiles(Array.from(event.target.files || []))}
+                          />
+                          {newHomeworkFiles.length > 0 && (
+                            <div className="text-xs text-muted-foreground">
+                              Выбрано файлов: {newHomeworkFiles.length}
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex gap-3">
@@ -439,7 +494,10 @@ export const AdminPage: React.FC = () => {
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
                                 <CardTitle>{hw.title}</CardTitle>
-                                <CardDescription>{hw.description}</CardDescription>
+                                <div
+                                  className="text-muted-foreground rich-text-content"
+                                  dangerouslySetInnerHTML={{ __html: hw.description }}
+                                />
                               </div>
                               <Badge>{subject?.name}</Badge>
                             </div>
@@ -456,6 +514,57 @@ export const AdminPage: React.FC = () => {
                                 <FileText className="w-4 h-4" />
                                 <span>{hw.submissions.length} сдано</span>
                               </div>
+                            </div>
+                            {hw.attachments?.length > 0 && (
+                              <div className="mt-4 space-y-1 text-sm">
+                                <div className="font-medium">Файлы задания</div>
+                                <div className="flex flex-col gap-1">
+                                    {hw.attachments.map((file) => (
+                                      <button
+                                        type="button"
+                                        key={file.id}
+                                        className="text-left text-primary hover:underline"
+                                        onClick={() => handleDownload(file)}
+                                      >
+                                        {file.name}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                            )}
+                            <div className="mt-4 space-y-2">
+                              <Label>Добавить файлы</Label>
+                              <Input
+                                type="file"
+                                multiple
+                                onChange={(event) =>
+                                  setHomeworkAttachmentFiles((prev) => ({
+                                    ...prev,
+                                    [hw.id]: Array.from(event.target.files || []),
+                                  }))
+                                }
+                              />
+                              {(homeworkAttachmentFiles[hw.id]?.length || 0) > 0 && (
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  <span>Выбрано файлов: {homeworkAttachmentFiles[hw.id].length}</span>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={async () => {
+                                      try {
+                                        const updated = await api.admin.uploadHomeworkAttachments(hw.id, homeworkAttachmentFiles[hw.id]);
+                                        setHomework((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+                                        setHomeworkAttachmentFiles((prev) => ({ ...prev, [hw.id]: [] }));
+                                        toast('Файлы добавлены');
+                                      } catch (err) {
+                                        toast(err instanceof Error ? err.message : 'Ошибка загрузки');
+                                      }
+                                    }}
+                                  >
+                                    Загрузить
+                                  </Button>
+                                </div>
+                              )}
                             </div>
                             <div className="mt-4 flex flex-wrap gap-3">
                               <Dialog open={reviewHomeworkId === hw.id} onOpenChange={(open) => setReviewHomeworkId(open ? hw.id : null)}>
@@ -502,8 +611,29 @@ export const AdminPage: React.FC = () => {
                                             </CardHeader>
                                             <CardContent className="space-y-3">
                                               <div className="text-sm text-muted-foreground">
-                                                Ответ: {submission.content}
+                                                <div className="font-medium">Ответ</div>
+                                                <div
+                                                  className="rich-text-content"
+                                                  dangerouslySetInnerHTML={{ __html: submission.content || '' }}
+                                                />
                                               </div>
+                                              {submission.attachments?.length > 0 && (
+                                                <div className="text-sm">
+                                                  <div className="font-medium">Файлы студента</div>
+                                                  <div className="flex flex-col gap-1">
+                                                    {submission.attachments.map((file) => (
+                                                      <button
+                                                        type="button"
+                                                        key={file.id}
+                                                        className="text-left text-primary hover:underline"
+                                                        onClick={() => handleDownload(file)}
+                                                      >
+                                                        {file.name}
+                                                      </button>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              )}
                                               <div className="grid gap-3 md:grid-cols-2">
                                                 <div className="space-y-2">
                                                   <Label>Комментарий</Label>
@@ -593,11 +723,10 @@ export const AdminPage: React.FC = () => {
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-description">Описание</Label>
-                    <Textarea
-                      id="edit-description"
+                    <RichTextEditor
                       value={editHomework.description}
-                      onChange={(e) => setEditHomework({ ...editHomework, description: e.target.value })}
-                      rows={4}
+                      onChange={(value) => setEditHomework({ ...editHomework, description: value })}
+                      minHeight={140}
                     />
                   </div>
 
@@ -625,6 +754,19 @@ export const AdminPage: React.FC = () => {
                       value={editHomework.dueDate}
                       onChange={(e) => setEditHomework({ ...editHomework, dueDate: e.target.value })}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Добавить файлы</Label>
+                    <Input
+                      type="file"
+                      multiple
+                      onChange={(event) => setEditHomeworkFiles(Array.from(event.target.files || []))}
+                    />
+                    {editHomeworkFiles.length > 0 && (
+                      <div className="text-xs text-muted-foreground">
+                        Выбрано файлов: {editHomeworkFiles.length}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex gap-3">
@@ -899,6 +1041,59 @@ export const AdminPage: React.FC = () => {
                   <Button onClick={handleCreateQuestion}>
                     Добавить вопрос
                   </Button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Импорт вопросов</CardTitle>
+                  <CardDescription>
+                    Загрузите Excel с колонками: ID, Вопрос, Ответ 1-4, Комментарий
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Предмет</Label>
+                    <Select
+                      value={importSubjectId}
+                      onValueChange={(value) => setImportSubjectId(value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Выберите предмет" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {subjects.map(subject => (
+                          <SelectItem key={subject.id} value={subject.id}>
+                            {subject.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Файл .xlsx или .xls</Label>
+                    <Input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={(event) => setImportFile(event.target.files?.[0] || null)}
+                    />
+                  </div>
+                  <Button onClick={handleImportQuestions} disabled={isImporting}>
+                    {isImporting ? 'Импорт...' : 'Импортировать'}
+                  </Button>
+                  {importReport && (
+                    <div className="text-sm text-muted-foreground">
+                      <div>Импортировано: {importReport.created}</div>
+                      <div>Пропущено: {importReport.skipped}</div>
+                      {importReport.errors.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {importReport.errors.map((error, index) => (
+                            <div key={`${error}-${index}`}>{error}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>

@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 
 @Generated(
     value = "org.mapstruct.ap.MappingProcessor",
-    date = "2025-12-29T03:17:45+0500",
+    date = "2026-01-06T02:27:38+0500",
     comments = "version: 1.5.5.Final, compiler: Eclipse JDT (IDE) 3.44.0.v20251118-1623, environment: Java 21.0.9 (Eclipse Adoptium)"
 )
 @Component
@@ -37,8 +37,9 @@ public class HomeworkMapperImpl implements HomeworkMapper {
         assignedBy = homework.getAssignedBy();
 
         List<HomeworkDtos.SubmissionDto> submissions = java.util.List.of();
+        List<HomeworkDtos.AttachmentDto> attachments = java.util.List.of();
 
-        HomeworkDtos.HomeworkDto homeworkDto = new HomeworkDtos.HomeworkDto( id, title, description, subjectId, dueDate, assignedBy, submissions );
+        HomeworkDtos.HomeworkDto homeworkDto = new HomeworkDtos.HomeworkDto( id, title, description, subjectId, dueDate, assignedBy, submissions, attachments );
 
         return homeworkDto;
     }

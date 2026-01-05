@@ -1,17 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '../api/client';
-import { Homework, Subject, TestResult } from '../types';
+import { api, downloadWithAuth } from '../api/client';
+import { Attachment, Homework, Subject, TestResult } from '../types';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Textarea } from './ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
 import { User, Calendar, Mail, Award, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
+import { RichTextEditor } from './RichTextEditor';
 
 export const ProfilePage: React.FC = () => {
   const { user, updateProfile } = useAuth();
@@ -29,6 +29,7 @@ export const ProfilePage: React.FC = () => {
   const [homework, setHomework] = useState<Homework[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [homeworkDrafts, setHomeworkDrafts] = useState<Record<string, string>>({});
+  const [homeworkFiles, setHomeworkFiles] = useState<Record<string, File[]>>({});
   const [homeworkSubmittingId, setHomeworkSubmittingId] = useState<string | null>(null);
   const [homeworkLoading, setHomeworkLoading] = useState(true);
   const [homeworkError, setHomeworkError] = useState('');
@@ -126,6 +127,14 @@ export const ProfilePage: React.FC = () => {
     if (status === 'NEEDS_REVISION') return 'destructive';
     if (status === 'SUBMITTED') return 'secondary';
     return 'outline';
+  };
+
+  const handleDownload = async (file: Attachment) => {
+    try {
+      await downloadWithAuth(file.downloadUrl, file.name);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Ошибка загрузки файла');
+    }
   };
 
   return (
@@ -403,6 +412,13 @@ export const ProfilePage: React.FC = () => {
                 const submission = task.submissions[0];
                 const draft = homeworkDrafts[task.id] ?? submission?.content ?? '';
                 const status = submission?.status;
+                const selectedFiles = homeworkFiles[task.id] || [];
+                const hasText = draft.replace(/<[^>]*>/g, '').trim().length > 0;
+                const hasExistingText = submission?.content
+                  ? submission.content.replace(/<[^>]*>/g, '').trim().length > 0
+                  : false;
+                const hasExistingFiles = (submission?.attachments?.length || 0) > 0;
+                const isLocked = submission && status !== 'NEEDS_REVISION';
 
                 return (
                   <Card key={task.id}>
@@ -410,7 +426,10 @@ export const ProfilePage: React.FC = () => {
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <CardTitle>{task.title}</CardTitle>
-                          <CardDescription>{task.description}</CardDescription>
+                          <div
+                            className="text-muted-foreground rich-text-content"
+                            dangerouslySetInnerHTML={{ __html: task.description }}
+                          />
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant="secondary">{subjectNameById(task.subjectId)}</Badge>
@@ -429,31 +448,84 @@ export const ProfilePage: React.FC = () => {
                           Комментарий: {submission.feedback}
                         </div>
                       )}
+                      {task.attachments?.length > 0 && (
+                        <div className="space-y-1 text-sm">
+                          <div className="font-medium">Файлы задания</div>
+                          <div className="flex flex-col gap-1">
+                            {task.attachments.map((file) => (
+                              <button
+                                type="button"
+                                key={file.id}
+                                className="text-left text-primary hover:underline"
+                                onClick={() => handleDownload(file)}
+                              >
+                                {file.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {submission?.attachments?.length > 0 && (
+                        <div className="space-y-1 text-sm">
+                          <div className="font-medium">Ваши файлы</div>
+                          <div className="flex flex-col gap-1">
+                            {submission.attachments.map((file) => (
+                              <button
+                                type="button"
+                                key={file.id}
+                                className="text-left text-primary hover:underline"
+                                onClick={() => handleDownload(file)}
+                              >
+                                {file.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <div className="space-y-2">
                         <Label htmlFor={`hw-${task.id}`}>Ответ студента</Label>
-                        <Textarea
-                          id={`hw-${task.id}`}
+                        <RichTextEditor
                           value={draft}
-                          onChange={(e) => setHomeworkDrafts((prev) => ({ ...prev, [task.id]: e.target.value }))}
+                          onChange={(value) => setHomeworkDrafts((prev) => ({ ...prev, [task.id]: value }))}
                           placeholder="Введите ответ или ссылку на работу"
-                          rows={3}
+                          disabled={isLocked}
                         />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Файл ответа (если нужно)</Label>
+                        <Input
+                          type="file"
+                          multiple
+                          disabled={isLocked}
+                          onChange={(event) =>
+                            setHomeworkFiles((prev) => ({
+                              ...prev,
+                              [task.id]: Array.from(event.target.files || []),
+                            }))
+                          }
+                        />
+                        {selectedFiles.length > 0 && (
+                          <div className="text-xs text-muted-foreground">
+                            Выбрано файлов: {selectedFiles.length}
+                          </div>
+                        )}
                       </div>
                       <div className="flex gap-3">
                         <Button
                           onClick={async () => {
-                            if (!draft.trim()) {
-                              toast('Введите текст ответа');
+                            if (!hasText && selectedFiles.length === 0 && !hasExistingText && !hasExistingFiles) {
+                              toast('Добавьте текст или файл');
                               return;
                             }
                             setHomeworkSubmittingId(task.id);
                             try {
-                              const updated = await api.submitHomework(task.id, draft.trim());
+                              const updated = await api.submitHomework(task.id, draft, selectedFiles);
                               setHomework((prev) =>
                                 prev.map((hw) =>
                                   hw.id === task.id ? { ...hw, submissions: [updated] } : hw
                                 )
                               );
+                              setHomeworkFiles((prev) => ({ ...prev, [task.id]: [] }));
                               toast('Ответ отправлен');
                             } catch (err) {
                               toast(err instanceof Error ? err.message : 'Ошибка отправки');
@@ -461,10 +533,15 @@ export const ProfilePage: React.FC = () => {
                               setHomeworkSubmittingId(null);
                             }
                           }}
-                          disabled={homeworkSubmittingId === task.id}
+                          disabled={homeworkSubmittingId === task.id || isLocked}
                         >
                           {submission ? 'Обновить ответ' : 'Отправить ответ'}
                         </Button>
+                        {isLocked && (
+                          <span className="text-xs text-muted-foreground">
+                            Ответ отправлен, ждите проверки
+                          </span>
+                        )}
                       </div>
                     </CardContent>
                   </Card>

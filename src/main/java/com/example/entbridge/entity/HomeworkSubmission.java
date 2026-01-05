@@ -39,4 +39,7 @@ public class HomeworkSubmission {
 
     @Column(name = "updated_at")
     private Instant updatedAt = Instant.now();
+
+    @OneToMany(mappedBy = "submission", cascade = CascadeType.ALL, orphanRemoval = true)
+    private java.util.List<HomeworkSubmissionAttachment> attachments = new java.util.ArrayList<>();
 }

@@ -9,6 +9,7 @@ import org.mapstruct.Mapping;
 public interface HomeworkMapper {
     @Mapping(source = "subject.code", target = "subjectId")
     @Mapping(target = "submissions", expression = "java(java.util.List.of())")
+    @Mapping(target = "attachments", expression = "java(java.util.List.of())")
     HomeworkDtos.HomeworkDto toDto(Homework homework);
 
     default String map(Long value) {
