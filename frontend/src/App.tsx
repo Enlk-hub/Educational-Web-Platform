@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AuthProvider } from './contexts/AuthContext';
+import { useAuth } from './contexts/AuthContext';
 import { Header } from './components/Header';
 import { HomePage } from './components/HomePage';
 import { LoginPage } from './components/LoginPage';
@@ -18,9 +18,35 @@ import './styles/globals.css';
 type Page = 'home' | 'login' | 'subjects' | 'test' | 'results' | 'profile' | 'videos' | 'about' | 'admin';
 
 export default function App() {
+  const { loginWithToken } = useAuth();
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [selectedSubjects, setSelectedSubjects] = useState<Subject[]>([]);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
+
+  // Handle OAuth2 redirect
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    const error = params.get('error');
+
+    if (token) {
+      if (token) {
+        loginWithToken(token).then((success) => {
+          if (success) {
+            // Remove query params
+            window.history.replaceState({}, document.title, window.location.pathname);
+            // Navigate to subjects page
+            setCurrentPage('subjects');
+          }
+        });
+      }
+    }
+
+    if (error) {
+      console.error("OAuth2 Error:", error);
+      // Could show a toast here
+    }
+  }, []);
 
   const handleNavigate = (page: string) => {
     setCurrentPage(page as Page);
@@ -63,12 +89,10 @@ export default function App() {
   };
 
   return (
-    <AuthProvider>
-      <div className="min-h-screen bg-background">
-        <Header onNavigate={handleNavigate} currentPage={currentPage} />
-        <main>{renderPage()}</main>
-        <Toaster />
-      </div>
-    </AuthProvider>
+    <div className="min-h-screen bg-background">
+      <Header onNavigate={handleNavigate} currentPage={currentPage} />
+      <main>{renderPage()}</main>
+      <Toaster />
+    </div>
   );
 }

@@ -20,15 +20,16 @@ public class ProfileService {
     private final TestResultMapper testResultMapper;
 
     public ProfileService(UserRepository userRepository,
-                          TestResultRepository testResultRepository,
-                          BCryptPasswordEncoder passwordEncoder,
-                          TestResultMapper testResultMapper) {
+            TestResultRepository testResultRepository,
+            BCryptPasswordEncoder passwordEncoder,
+            TestResultMapper testResultMapper) {
         this.userRepository = userRepository;
         this.testResultRepository = testResultRepository;
         this.passwordEncoder = passwordEncoder;
         this.testResultMapper = testResultMapper;
     }
 
+    @SuppressWarnings("null")
     @Transactional(readOnly = true)
     public Page<com.example.entbridge.dto.TestDtos.ResultDto> history(Long userId, Pageable pageable) {
         User user = userRepository.findById(userId)
@@ -36,6 +37,7 @@ public class ProfileService {
         return testResultRepository.findByUser(user, pageable).map(testResultMapper::toDto);
     }
 
+    @SuppressWarnings("null")
     public void changePassword(Long userId, String oldPassword, String newPassword) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Пользователь не найден"));
@@ -46,6 +48,7 @@ public class ProfileService {
         userRepository.save(user);
     }
 
+    @SuppressWarnings("null")
     public User updateProfile(Long userId, String name, String email) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Пользователь не найден"));
@@ -59,6 +62,7 @@ public class ProfileService {
         return user;
     }
 
+    @SuppressWarnings("null")
     public User getUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Пользователь не найден"));

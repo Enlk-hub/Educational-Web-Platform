@@ -41,9 +41,14 @@ export interface TestResult {
   date: string;
   answers?: {
     questionId: string;
-    selectedAnswer: string;
+    selectedOptionId: string;
     isCorrect: boolean;
+    correctOptionId: string;
   }[];
+  sessionData?: {
+    questions: Question[];
+    userAnswers: Record<string, string>;
+  };
 }
 
 export interface Homework {
@@ -87,4 +92,26 @@ export interface VideoLesson {
   thumbnail: string;
   duration: string;
   description: string;
+}
+
+export interface AdminStats {
+  questionsCreated: number;
+  homeworkReviewed: number;
+  totalActions: number;
+}
+
+export interface AdminNote {
+  id: string;
+  content: string;
+  completed: boolean;
+  createdAt: string;
+}
+
+export interface AuditLog {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  details: string;
+  createdAt: string;
 }

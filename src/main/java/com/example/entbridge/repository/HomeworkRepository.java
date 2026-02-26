@@ -8,11 +8,13 @@ import java.util.List;
 import java.util.Optional;
 
 public interface HomeworkRepository extends JpaRepository<Homework, Long> {
+    @SuppressWarnings("null")
     @Override
-    @EntityGraph(attributePaths = {"subject"})
+    @EntityGraph(attributePaths = { "subject" })
     List<Homework> findAll();
 
+    @SuppressWarnings("null")
     @Override
-    @EntityGraph(attributePaths = {"subject"})
+    @EntityGraph(attributePaths = { "subject" })
     Optional<Homework> findById(Long id);
 }

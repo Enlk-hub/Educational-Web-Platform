@@ -46,13 +46,13 @@ public class AdminController {
 
     @PostMapping("/homework")
     public HomeworkDtos.HomeworkDto createHomework(@AuthenticationPrincipal UserPrincipal principal,
-                                                   @RequestBody @Valid HomeworkDtos.CreateHomeworkRequest request) {
+            @RequestBody @Valid HomeworkDtos.CreateHomeworkRequest request) {
         return adminService.createHomework(principal.id(), request);
     }
 
     @PutMapping("/homework/{homeworkId}")
     public HomeworkDtos.HomeworkDto updateHomework(@PathVariable Long homeworkId,
-                                                   @RequestBody @Valid HomeworkDtos.UpdateHomeworkRequest request) {
+            @RequestBody @Valid HomeworkDtos.UpdateHomeworkRequest request) {
         return adminService.updateHomework(homeworkId, request);
     }
 
@@ -63,31 +63,56 @@ public class AdminController {
     }
 
     @PostMapping("/homework/submissions/{submissionId}/review")
-    public HomeworkDtos.SubmissionDto reviewSubmission(@PathVariable Long submissionId,
-                                                       @RequestBody @Valid HomeworkDtos.ReviewSubmissionRequest request) {
-        return adminService.reviewSubmission(submissionId, request);
+    public HomeworkDtos.SubmissionDto reviewSubmission(@AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long submissionId,
+            @RequestBody @Valid HomeworkDtos.ReviewSubmissionRequest request) {
+        return adminService.reviewSubmission(principal.id(), submissionId, request);
     }
 
     @PostMapping(value = "/homework/{homeworkId}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public HomeworkDtos.HomeworkDto addHomeworkAttachments(@PathVariable Long homeworkId,
-                                                           @RequestPart("files") List<MultipartFile> files) {
+            @RequestPart("files") List<MultipartFile> files) {
         return adminService.addHomeworkAttachments(homeworkId, files);
     }
 
     @PostMapping("/subjects")
-    public SubjectDto createSubject(@RequestBody @Valid AdminDtos.CreateSubjectRequest request) {
-        return subjectMapper.toDto(adminService.createSubject(request));
+    public SubjectDto createSubject(@AuthenticationPrincipal UserPrincipal principal,
+            @RequestBody @Valid AdminDtos.CreateSubjectRequest request) {
+        return subjectMapper.toDto(adminService.createSubject(principal.id(), request));
     }
 
     @PostMapping("/questions")
-    public Map<String, String> createQuestion(@RequestBody @Valid AdminDtos.CreateQuestionRequest request) {
-        var question = adminService.createQuestion(request);
+    public Map<String, String> createQuestion(@AuthenticationPrincipal UserPrincipal principal,
+            @RequestBody @Valid AdminDtos.CreateQuestionRequest request) {
+        var question = adminService.createQuestion(principal.id(), request);
         return Map.of("id", question.getId().toString(), "message", "Вопрос создан");
     }
 
     @PostMapping(value = "/questions/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public AdminDtos.ImportQuestionsResponse importQuestions(@RequestPart("file") MultipartFile file,
-                                                             @RequestPart("subjectId") String subjectId) {
-        return adminService.importQuestions(subjectId, file);
+    public AdminDtos.ImportQuestionsResponse importQuestions(@AuthenticationPrincipal UserPrincipal principal,
+            @RequestPart("file") MultipartFile file,
+            @RequestPart("subjectId") String subjectId) {
+        return adminService.importQuestions(principal.id(), subjectId, file);
     }
+
+    @PostMapping("/videos")
+    public com.example.entbridge.dto.VideoLessonDto createVideo(@AuthenticationPrincipal UserPrincipal principal,
+            @RequestBody @Valid AdminDtos.CreateVideoRequest request) {
+        return adminService.createVideo(principal.id(), request);
+    }
+
+    @PutMapping("/videos/{videoId}")
+    public com.example.entbridge.dto.VideoLessonDto updateVideo(@AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long videoId,
+            @RequestBody @Valid AdminDtos.UpdateVideoRequest request) {
+        return adminService.updateVideo(principal.id(), videoId, request);
+    }
+
+    @DeleteMapping("/videos/{videoId}")
+    public Map<String, String> deleteVideo(@AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long videoId) {
+        adminService.deleteVideo(principal.id(), videoId);
+        return Map.of("message", "Видеоурок удален");
+    }
+
 }

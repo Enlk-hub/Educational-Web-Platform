@@ -1,6 +1,7 @@
 package com.example.entbridge.exception;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.lang.NonNull;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -11,11 +12,14 @@ import jakarta.validation.ConstraintViolationException;
 import java.time.Instant;
 import java.util.stream.Collectors;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import lombok.extern.slf4j.Slf4j;
 
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiError> handleApi(ApiException ex) {
+        log.error("API Exception: {}", ex.getMessage(), ex);
         return build(ex.getStatus(), ex.getError(), ex.getMessage());
     }
 
@@ -39,10 +43,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handle(Exception ex) {
+        log.error("Unhandled internal error: {}", ex.getMessage(), ex);
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", ex.getMessage());
     }
 
-    private ResponseEntity<ApiError> build(HttpStatus status, String error, String message) {
+    private ResponseEntity<ApiError> build(@NonNull HttpStatus status, String error, String message) {
         return ResponseEntity.status(status).body(new ApiError(error, message, Instant.now().toString()));
     }
 }

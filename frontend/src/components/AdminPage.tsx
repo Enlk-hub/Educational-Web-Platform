@@ -12,9 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import { useAuth } from '../contexts/AuthContext';
 import { api, downloadWithAuth } from '../api/client';
-import { Homework, Subject, TestResult, User, Attachment } from '../types';
-import { FileText, Users, BarChart, Plus, Calendar, CheckCircle, Edit, Trash2 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { Homework, Subject, TestResult, User, Attachment, VideoLesson, AdminStats, AdminNote, AuditLog } from '../types';
+import { FileText, Users, BarChart, Plus, Calendar, CheckCircle, Edit, Trash2, PlayCircle, CheckCircle2, Circle, ListTodo, History, LayoutDashboard, ChevronRight } from 'lucide-react';
+import { toast } from 'sonner';
 import { RichTextEditor } from './RichTextEditor';
 
 export const AdminPage: React.FC = () => {
@@ -64,6 +64,19 @@ export const AdminPage: React.FC = () => {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importReport, setImportReport] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [adminVideos, setAdminVideos] = useState<VideoLesson[]>([]);
+  const [isAddingVideo, setIsAddingVideo] = useState(false);
+  const [editingVideo, setEditingVideo] = useState<VideoLesson | null>(null);
+  const [videoForm, setVideoForm] = useState({
+    title: '',
+    subjectId: '',
+    youtubeUrl: '',
+    description: '',
+    thumbnail: '',
+    duration: '',
+  });
+  const [studentSearch, setStudentSearch] = useState('');
+  const [selectedStudentForAnalytics, setSelectedStudentForAnalytics] = useState<User | null>(null);
 
   useEffect(() => {
     if (!user?.isAdmin) return;
@@ -75,12 +88,14 @@ export const AdminPage: React.FC = () => {
       api.admin.getUsers(),
       api.admin.getResults(),
       api.admin.getHomework(),
+      api.getVideos()
     ])
-      .then(([subjectData, userData, resultData, homeworkData]) => {
+      .then(([subjectData, userData, resultData, homeworkData, videoData]) => {
         setSubjects(subjectData);
         setUsers(userData);
         setResults(resultData);
         setHomework(homeworkData);
+        setAdminVideos(videoData);
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'Ошибка загрузки данных'))
       .finally(() => setIsLoading(false));
@@ -99,6 +114,41 @@ export const AdminPage: React.FC = () => {
       </div>
     );
   }
+
+  const handleCreateVideo = async () => {
+    if (!videoForm.title || !videoForm.subjectId || !videoForm.youtubeUrl) {
+      toast('Заполните обязательные поля: название, предмет, ссылка');
+      return;
+    }
+
+    try {
+      if (editingVideo) {
+        const updated = await api.admin.updateVideo(editingVideo.id, videoForm);
+        setAdminVideos(prev => prev.map(v => v.id === updated.id ? updated : v));
+        toast('Видеоурок обновлен');
+      } else {
+        const created = await api.admin.createVideo(videoForm);
+        setAdminVideos(prev => [created, ...prev]);
+        toast('Видеоурок добавлен');
+      }
+      setIsAddingVideo(false);
+      setEditingVideo(null);
+      setVideoForm({ title: '', subjectId: '', youtubeUrl: '', description: '', thumbnail: '', duration: '' });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Ошибка при сохранении видео');
+    }
+  };
+
+  const handleDeleteVideo = async (videoId: string) => {
+    if (!confirm('Вы уверены, что хотите удалить этот видеоурок?')) return;
+    try {
+      await api.admin.deleteVideo(videoId);
+      setAdminVideos(prev => prev.filter(v => v.id !== videoId));
+      toast('Видеоурок удален');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Ошибка при удалении');
+    }
+  };
 
   const handleAddHomework = async () => {
     if (!newHomework.title || !newHomework.description || !newHomework.subjectId || !newHomework.dueDate) {
@@ -288,6 +338,7 @@ export const AdminPage: React.FC = () => {
     }
   };
 
+
   const totalStudents = users.filter(u => !u.isAdmin).length;
   const totalTests = results.length;
   const totalHomework = homework.length;
@@ -299,12 +350,14 @@ export const AdminPage: React.FC = () => {
   }, {});
 
   return (
-    <div className="min-h-screen bg-background py-8">
+    <div className="min-h-screen bg-background pt-28 pb-8">
       <div className="container mx-auto px-4 max-w-7xl">
-        <div className="mb-8">
-          <h1 className="mb-2">Панель администратора</h1>
-          <p className="text-muted-foreground">
-            Управление платформой, студентами и заданиями
+        <div className="mb-12 text-center md:text-left">
+          <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter mb-4 italic text-primary">
+            Панель администратора
+          </h1>
+          <p className="text-xl text-muted-foreground font-medium max-w-2xl">
+            Центр управления платформой, контентом и успеваемостью студентов
           </p>
         </div>
 
@@ -317,93 +370,55 @@ export const AdminPage: React.FC = () => {
         )}
 
         {/* Statistics */}
-        <div className="grid md:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                  <Users className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Студентов</p>
-                  <div className="text-2xl">{totalStudents}</div>
-                </div>
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+          {[
+            { title: 'Студентов', value: totalStudents, icon: Users, color: 'bg-indigo-50 text-indigo-600' },
+            { title: 'Пройдено тестов', value: totalTests, icon: BarChart, color: 'bg-emerald-50 text-emerald-600' },
+            { title: 'Заданий', value: totalHomework, icon: FileText, color: 'bg-purple-50 text-purple-600' },
+            { title: 'Активных предметов', value: subjects.length, icon: CheckCircle, color: 'bg-orange-50 text-orange-600' }
+          ].map((stat, i) => (
+            <div key={i} className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-500 group flex items-center gap-6">
+              <div className={`w-14 h-14 ${stat.color} rounded-[1rem] flex items-center justify-center group-hover:scale-110 transition-transform`}>
+                <stat.icon className="w-6 h-6" />
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                  <BarChart className="w-5 h-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Пройдено тестов</p>
-                  <div className="text-2xl">{totalTests}</div>
-                </div>
+              <div>
+                <div className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-1">{stat.title}</div>
+                <div className="text-3xl font-black tracking-tighter text-foreground">{stat.value}</div>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-purple-600" />
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Заданий</p>
-                  <div className="text-2xl">{totalHomework}</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
-                  <CheckCircle className="w-5 h-5 text-orange-600" />
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Активных предметов</p>
-                  <div className="text-2xl">{subjects.length}</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+          ))}
         </div>
 
         <Tabs defaultValue="homework" className="w-full">
-          <TabsList className="flex w-full grid-cols-4">
-            <TabsTrigger value="homework">Домашние задания</TabsTrigger>
-            <TabsTrigger value="students">Студенты</TabsTrigger>
-            <TabsTrigger value="results">Результаты тестов</TabsTrigger>
-            <TabsTrigger value="content">Контент</TabsTrigger>
+          <TabsList className="flex flex-wrap md:inline-flex bg-gray-100 p-2 rounded-2xl gap-2 w-full md:w-auto mb-8">
+            <TabsTrigger value="homework" className="rounded-xl font-black uppercase tracking-[0.05em] text-xs py-3 px-6 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">Домашние задания</TabsTrigger>
+            <TabsTrigger value="subjects" className="rounded-xl font-black uppercase tracking-[0.05em] text-xs py-3 px-6 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">Предметы и видео</TabsTrigger>
+            <TabsTrigger value="students" className="rounded-xl font-black uppercase tracking-[0.05em] text-xs py-3 px-6 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">Студенты</TabsTrigger>
+            <TabsTrigger value="results" className="rounded-xl font-black uppercase tracking-[0.05em] text-xs py-3 px-6 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">Результаты тестов</TabsTrigger>
+            <TabsTrigger value="content" className="rounded-xl font-black uppercase tracking-[0.05em] text-xs py-3 px-6 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">Вопросы</TabsTrigger>
           </TabsList>
 
           <TabsContent value="homework" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
+            <Card className="rounded-[2.5rem] border-none bg-white p-6 md:p-8 no-shadow shadow-sm">
+              <CardHeader className="px-0 pt-0 pb-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                   <div>
-                    <CardTitle>Управление домашними заданиями</CardTitle>
-                    <CardDescription>
-                      Создавайте и управляйте домашними заданиями для студентов
+                    <CardTitle className="text-2xl md:text-3xl font-black uppercase tracking-tighter">Управление дз</CardTitle>
+                    <CardDescription className="text-base font-medium mt-2">
+                      Создавайте и проверяйте домашние задания для студентов
                     </CardDescription>
                   </div>
                   <Dialog open={isAddingHomework} onOpenChange={setIsAddingHomework}>
                     <DialogTrigger asChild>
-                      <Button>
+                      <Button className="rounded-xl h-12 px-6 font-black text-xs uppercase tracking-widest no-shadow">
                         <Plus className="w-4 h-4 mr-2" />
                         Добавить задание
                       </Button>
                     </DialogTrigger>
-                    <DialogContent>
+                    <DialogContent className="rounded-[2rem] p-8 max-w-2xl">
                       <DialogHeader>
-                        <DialogTitle>Новое домашнее задание</DialogTitle>
-                        <DialogDescription>
+                        <DialogTitle className="text-2xl font-black uppercase tracking-tighter">Новое домашнее задание</DialogTitle>
+                        <DialogDescription className="font-medium text-base">
                           Заполните форму для создания нового задания
                         </DialogDescription>
                       </DialogHeader>
@@ -480,29 +495,29 @@ export const AdminPage: React.FC = () => {
                   </Dialog>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-0 pb-0">
                 {isLoading ? (
-                  <div className="text-center text-muted-foreground">Загрузка...</div>
+                  <div className="text-center py-12 text-muted-foreground font-medium">Загрузка...</div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="grid gap-6">
                     {homework.map(hw => {
                       const subject = subjects.find(s => s.id === hw.subjectId);
 
                       return (
-                        <Card key={hw.id}>
-                          <CardHeader>
-                            <div className="flex items-start justify-between">
+                        <Card key={hw.id} className="rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                          <CardHeader className="p-6 md:p-8">
+                            <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                               <div className="flex-1">
-                                <CardTitle>{hw.title}</CardTitle>
+                                <CardTitle className="text-xl md:text-2xl font-black tracking-tight mb-3 text-primary">{hw.title}</CardTitle>
                                 <div
-                                  className="text-muted-foreground rich-text-content"
+                                  className="text-muted-foreground font-medium rich-text-content"
                                   dangerouslySetInnerHTML={{ __html: hw.description }}
                                 />
                               </div>
-                              <Badge>{subject?.name}</Badge>
+                              <Badge className="w-fit h-fit px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest bg-primary/5 text-primary hover:bg-primary/10 transition-colors">{subject?.name}</Badge>
                             </div>
                           </CardHeader>
-                          <CardContent>
+                          <CardContent className="p-6 md:p-8 pt-0 md:pt-0">
                             <div className="flex items-center gap-4 text-sm text-muted-foreground">
                               <div className="flex items-center gap-2">
                                 <Calendar className="w-4 h-4" />
@@ -519,18 +534,18 @@ export const AdminPage: React.FC = () => {
                               <div className="mt-4 space-y-1 text-sm">
                                 <div className="font-medium">Файлы задания</div>
                                 <div className="flex flex-col gap-1">
-                                    {hw.attachments.map((file) => (
-                                      <button
-                                        type="button"
-                                        key={file.id}
-                                        className="text-left text-primary hover:underline"
-                                        onClick={() => handleDownload(file)}
-                                      >
-                                        {file.name}
-                                      </button>
-                                    ))}
-                                  </div>
+                                  {hw.attachments.map((file) => (
+                                    <button
+                                      type="button"
+                                      key={file.id}
+                                      className="text-left text-primary hover:underline"
+                                      onClick={() => handleDownload(file)}
+                                    >
+                                      {file.name}
+                                    </button>
+                                  ))}
                                 </div>
+                              </div>
                             )}
                             <div className="mt-4 space-y-2">
                               <Label>Добавить файлы</Label>
@@ -782,123 +797,16 @@ export const AdminPage: React.FC = () => {
             </Dialog>
           </TabsContent>
 
-          <TabsContent value="students">
-            <Card>
-              <CardHeader>
-                <CardTitle>Список студентов</CardTitle>
-                <CardDescription>
-                  Все зарегистрированные студенты на платформе
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Имя</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Имя пользователя</TableHead>
-                      <TableHead>Дата регистрации</TableHead>
-                      <TableHead>Действия</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {users.filter(u => !u.isAdmin).map(student => (
-                      <TableRow key={student.id}>
-                        <TableCell>{student.name}</TableCell>
-                        <TableCell>{student.email}</TableCell>
-                        <TableCell>{student.username}</TableCell>
-                        <TableCell>
-                          {new Date(student.createdAt).toLocaleDateString('ru-RU')}
-                        </TableCell>
-                        <TableCell>
-                          <Button size="sm" variant="outline">
-                            Просмотр
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="results">
-            <Card>
-              <CardHeader>
-                <CardTitle>Результаты тестов</CardTitle>
-                <CardDescription>
-                  Результаты всех пройденных тестов
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {results.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">Результатов пока нет</div>
-                ) : (
-                  <Accordion type="multiple" className="w-full">
-                    {Object.entries(resultsByStudent).map(([studentId, studentResults]) => {
-                      const student = users.find(u => u.id === studentId);
-                      const name = student?.name || 'Unknown';
-                      return (
-                        <AccordionItem key={studentId} value={studentId}>
-                          <AccordionTrigger>
-                            <div className="flex items-center gap-3">
-                              <span>{name}</span>
-                              <Badge variant="secondary">{studentResults.length}</Badge>
-                            </div>
-                          </AccordionTrigger>
-                          <AccordionContent>
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>Предмет</TableHead>
-                                  <TableHead>Балл</TableHead>
-                                  <TableHead>Правильных ответов</TableHead>
-                                  <TableHead>Дата</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {studentResults.map(result => {
-                                  const percentage = Math.round((result.score / result.maxScore) * 100);
-                                  return (
-                                    <TableRow key={result.id}>
-                                      <TableCell>{result.subjectName}</TableCell>
-                                      <TableCell>
-                                        <Badge variant={percentage >= 75 ? 'default' : 'secondary'}>
-                                          {result.score} / {result.maxScore}
-                                        </Badge>
-                                      </TableCell>
-                                      <TableCell>
-                                        {result.correctAnswers} / {result.totalQuestions}
-                                      </TableCell>
-                                      <TableCell>
-                                        {new Date(result.date).toLocaleDateString('ru-RU')}
-                                      </TableCell>
-                                    </TableRow>
-                                  );
-                                })}
-                              </TableBody>
-                            </Table>
-                          </AccordionContent>
-                        </AccordionItem>
-                      );
-                    })}
-                  </Accordion>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="content">
-            <div className="grid gap-6 lg:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Новый предмет</CardTitle>
-                  <CardDescription>
-                    Создайте предмет, чтобы он появился в списках фронтенда
+          <TabsContent value="subjects" className="space-y-6">
+            <div className="grid gap-6 xl:grid-cols-2">
+              <Card className="rounded-[2.5rem] border-none bg-white p-6 md:p-8 no-shadow shadow-sm">
+                <CardHeader className="px-0 pt-0 pb-6">
+                  <CardTitle className="text-2xl font-black uppercase tracking-tighter">Новый предмет</CardTitle>
+                  <CardDescription className="text-base font-medium mt-2">
+                    Создайте предмет, чтобы он появился в списках
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 px-0 pb-0">
                   <div className="space-y-2">
                     <Label htmlFor="subject-code">Код предмета</Label>
                     <Input
@@ -975,14 +883,379 @@ export const AdminPage: React.FC = () => {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Новый вопрос</CardTitle>
-                  <CardDescription>
+              <Card className="rounded-[2.5rem] border-none bg-white p-6 md:p-8 no-shadow shadow-sm">
+                <CardHeader className="px-0 pt-0 pb-6">
+                  <CardTitle className="flex items-center gap-3 text-2xl font-black uppercase tracking-tighter">
+                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
+                      <PlayCircle className="w-5 h-5 text-indigo-600" />
+                    </div>
+                    Управление видео
+                  </CardTitle>
+                  <CardDescription className="text-base font-medium mt-2">
+                    Добавление и редактирование видеоуроков
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6 px-0 pb-0">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold">Список видеоуроков</h3>
+                    <Button onClick={() => setIsAddingVideo(true)} size="sm" className="gap-2">
+                      <Plus className="w-4 h-4" /> Добавить видео
+                    </Button>
+                  </div>
+
+                  {(isAddingVideo || editingVideo) && (
+                    <Card className="bg-muted/30 border-dashed mb-6">
+                      <CardHeader>
+                        <CardTitle className="text-base">{editingVideo ? 'Редактировать видео' : 'Новый видеоурок'}</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Название</Label>
+                            <Input
+                              value={videoForm.title}
+                              onChange={(e) => setVideoForm({ ...videoForm, title: e.target.value })}
+                              placeholder="Напр: Введение в органическую химию"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Предмет</Label>
+                            <Select
+                              value={videoForm.subjectId}
+                              onValueChange={(value) => setVideoForm({ ...videoForm, subjectId: value })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Выберите предмет" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {subjects.map(s => (
+                                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Ссылка на YouTube</Label>
+                          <Input
+                            value={videoForm.youtubeUrl}
+                            onChange={(e) => setVideoForm({ ...videoForm, youtubeUrl: e.target.value })}
+                            placeholder="https://www.youtube.com/watch?v=..."
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Ссылка на превью (Thumbnail)</Label>
+                            <Input
+                              value={videoForm.thumbnail}
+                              onChange={(e) => setVideoForm({ ...videoForm, thumbnail: e.target.value })}
+                              placeholder="https://..."
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Длительность</Label>
+                            <Input
+                              value={videoForm.duration}
+                              onChange={(e) => setVideoForm({ ...videoForm, duration: e.target.value })}
+                              placeholder="напр. 10:45"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Описание (необязательно)</Label>
+                          <Textarea
+                            value={videoForm.description}
+                            onChange={(e) => setVideoForm({ ...videoForm, description: e.target.value })}
+                            rows={2}
+                          />
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                          <Button variant="ghost" onClick={() => {
+                            setIsAddingVideo(false);
+                            setEditingVideo(null);
+                            setVideoForm({ title: '', subjectId: '', youtubeUrl: '', description: '', thumbnail: '', duration: '' });
+                          }}>Отмена</Button>
+                          <Button onClick={handleCreateVideo}>
+                            {editingVideo ? 'Обновить' : 'Сохранить'}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Название</TableHead>
+                          <TableHead>Длительность</TableHead>
+                          <TableHead>Предмет</TableHead>
+                          <TableHead className="text-right">Действия</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {adminVideos.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                              Видеоуроки не найдены
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          adminVideos.map((video) => (
+                            <TableRow key={video.id}>
+                              <TableCell className="font-medium">{video.title}</TableCell>
+                              <TableCell>{video.duration || '-'}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline">
+                                  {subjects.find(s => s.id === video.subjectId)?.name || video.subjectId}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                      setEditingVideo(video);
+                                      setVideoForm({
+                                        title: video.title,
+                                        subjectId: video.subjectId,
+                                        youtubeUrl: video.youtubeUrl,
+                                        description: video.description || '',
+                                        thumbnail: video.thumbnail || '',
+                                        duration: video.duration || '',
+                                      });
+                                    }}
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleDeleteVideo(video.id)}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="students">
+            <Card className="rounded-[2.5rem] border-none bg-white p-6 no-shadow">
+              <CardHeader className="px-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-2xl font-black uppercase tracking-tighter italic">Список студентов</CardTitle>
+                  <CardDescription className="font-medium italic">
+                    Все зарегистрированные студенты на платформе
+                  </CardDescription>
+                </div>
+                <div className="relative w-full md:w-80">
+                  <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                    <Users className="w-4 h-4 text-muted-foreground/50" />
+                  </div>
+                  <Input
+                    placeholder="Поиск по имени или email..."
+                    className="pl-10 h-11 rounded-2xl border-gray-100 bg-gray-50/50 no-shadow"
+                    value={studentSearch}
+                    onChange={(e) => setStudentSearch(e.target.value)}
+                  />
+                </div>
+              </CardHeader>
+              <CardContent className="px-6">
+                <div className="border border-gray-100 rounded-[2rem] overflow-hidden">
+                  <Table>
+                    <TableHeader className="bg-gray-50/50">
+                      <TableRow className="border-gray-50 hover:bg-transparent">
+                        <TableHead className="font-black uppercase text-[10px] tracking-widest text-muted-foreground py-4">Студент</TableHead>
+                        <TableHead className="font-black uppercase text-[10px] tracking-widest text-muted-foreground py-4">Email / Никнейм</TableHead>
+                        <TableHead className="font-black uppercase text-[10px] tracking-widest text-muted-foreground py-4">Регистрация</TableHead>
+                        <TableHead className="font-black uppercase text-[10px] tracking-widest text-muted-foreground py-4 text-right">Действия</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {users
+                        .filter(u => !u.isAdmin)
+                        .filter(u =>
+                          u.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                          u.email.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                          u.username.toLowerCase().includes(studentSearch.toLowerCase())
+                        )
+                        .map(student => (
+                          <TableRow key={student.id} className="border-gray-50 hover:bg-gray-50/30 transition-colors group">
+                            <TableCell className="py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-primary/10 text-primary rounded-xl flex items-center justify-center font-black text-xs uppercase">
+                                  {student.name.slice(0, 2).toUpperCase()}
+                                </div>
+                                <div className="font-black uppercase tracking-tighter italic text-sm">{student.name}</div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-4">
+                              <div className="flex flex-col">
+                                <span className="text-sm font-medium text-muted-foreground">{student.email}</span>
+                                <span className="text-[10px] font-black uppercase text-primary tracking-widest">@{student.username}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-4 font-medium text-sm italic text-muted-foreground">
+                              {new Date(student.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+                            </TableCell>
+                            <TableCell className="py-4 text-right">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setSelectedStudentForAnalytics(student)}
+                                className="rounded-xl font-black text-[10px] uppercase tracking-widest h-9 px-4 group-hover:bg-primary group-hover:text-white transition-all">
+                                Аналитика <ChevronRight className="w-4 h-4 ml-1" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                  {selectedStudentForAnalytics && (
+                    <Dialog open={!!selectedStudentForAnalytics} onOpenChange={(open) => !open && setSelectedStudentForAnalytics(null)}>
+                      <DialogContent className="max-w-2xl rounded-[2rem] p-8">
+                        <DialogHeader>
+                          <DialogTitle className="text-2xl font-black uppercase tracking-tighter">
+                            Аналитика: {selectedStudentForAnalytics.name}
+                          </DialogTitle>
+                          <DialogDescription className="font-medium text-base">
+                            Подробная статистика по пройденным тестам
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                          {resultsByStudent[selectedStudentForAnalytics.id]?.length ? (
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Предмет</TableHead>
+                                  <TableHead>Балл</TableHead>
+                                  <TableHead>Верных ответов</TableHead>
+                                  <TableHead>Дата</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {resultsByStudent[selectedStudentForAnalytics.id].map(result => {
+                                  const percentage = Math.round((result.score / result.maxScore) * 100);
+                                  return (
+                                    <TableRow key={result.id}>
+                                      <TableCell className="font-medium">{result.subjectName}</TableCell>
+                                      <TableCell>
+                                        <Badge variant={percentage >= 75 ? 'default' : 'secondary'} className="rounded-lg">
+                                          {result.score} / {result.maxScore}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell>
+                                        {result.correctAnswers} из {result.totalQuestions}
+                                      </TableCell>
+                                      <TableCell className="text-muted-foreground whitespace-nowrap">
+                                        {new Date(result.date).toLocaleDateString('ru-RU')}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          ) : (
+                            <div className="text-center py-8 text-muted-foreground bg-gray-50 rounded-2xl">
+                              Этот студент еще не проходил тесты
+                            </div>
+                          )}
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="results">
+            <Card className="rounded-[2.5rem] border-none bg-white p-6 md:p-8 no-shadow shadow-sm">
+              <CardHeader className="px-0 pt-0 pb-6">
+                <CardTitle className="text-2xl font-black uppercase tracking-tighter">Результаты тестов</CardTitle>
+                <CardDescription className="text-base font-medium mt-2">
+                  Результаты всех пройденных тестов
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-0 pb-0">
+                {results.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">Результатов пока нет</div>
+                ) : (
+                  <Accordion type="multiple" className="w-full">
+                    {Object.entries(resultsByStudent).map(([studentId, studentResults]) => {
+                      const student = users.find(u => u.id === studentId);
+                      const name = student?.name || 'Unknown';
+                      return (
+                        <AccordionItem key={studentId} value={studentId}>
+                          <AccordionTrigger>
+                            <div className="flex items-center gap-3">
+                              <span>{name}</span>
+                              <Badge variant="secondary">{studentResults.length}</Badge>
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Предмет</TableHead>
+                                  <TableHead>Балл</TableHead>
+                                  <TableHead>Правильных ответов</TableHead>
+                                  <TableHead>Дата</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {studentResults.map(result => {
+                                  const percentage = Math.round((result.score / result.maxScore) * 100);
+                                  return (
+                                    <TableRow key={result.id}>
+                                      <TableCell>{result.subjectName}</TableCell>
+                                      <TableCell>
+                                        <Badge variant={percentage >= 75 ? 'default' : 'secondary'}>
+                                          {result.score} / {result.maxScore}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell>
+                                        {result.correctAnswers} / {result.totalQuestions}
+                                      </TableCell>
+                                      <TableCell>
+                                        {new Date(result.date).toLocaleDateString('ru-RU')}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </AccordionContent>
+                        </AccordionItem>
+                      );
+                    })}
+                  </Accordion>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="content">
+            <div className="grid gap-6 xl:grid-cols-2">
+              <Card className="rounded-[2.5rem] border-none bg-white p-6 md:p-8 no-shadow shadow-sm">
+                <CardHeader className="px-0 pt-0 pb-6">
+                  <CardTitle className="text-2xl font-black uppercase tracking-tighter">Новый вопрос</CardTitle>
+                  <CardDescription className="text-base font-medium mt-2">
                     Варианты ответов вводите построчно, правильный отметьте символом *
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 px-0 pb-0">
                   <div className="space-y-2">
                     <Label htmlFor="question-subject">Предмет</Label>
                     <Select
@@ -1044,14 +1317,14 @@ export const AdminPage: React.FC = () => {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Импорт вопросов</CardTitle>
-                  <CardDescription>
+              <Card className="rounded-[2.5rem] border-none bg-white p-6 md:p-8 no-shadow shadow-sm">
+                <CardHeader className="px-0 pt-0 pb-6">
+                  <CardTitle className="text-2xl font-black uppercase tracking-tighter">Импорт вопросов</CardTitle>
+                  <CardDescription className="text-base font-medium mt-2">
                     Загрузите Excel с колонками: ID, Вопрос, Ответ 1-4, Комментарий
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 px-0 pb-0">
                   <div className="space-y-2">
                     <Label>Предмет</Label>
                     <Select

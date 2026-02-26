@@ -38,12 +38,12 @@ public class HomeworkService {
     private final FileStorageService fileStorageService;
 
     public HomeworkService(HomeworkRepository homeworkRepository,
-                           HomeworkSubmissionRepository submissionRepository,
-                           HomeworkAttachmentRepository homeworkAttachmentRepository,
-                           HomeworkSubmissionAttachmentRepository submissionAttachmentRepository,
-                           SubjectRepository subjectRepository,
-                           UserRepository userRepository,
-                           FileStorageService fileStorageService) {
+            HomeworkSubmissionRepository submissionRepository,
+            HomeworkAttachmentRepository homeworkAttachmentRepository,
+            HomeworkSubmissionAttachmentRepository submissionAttachmentRepository,
+            SubjectRepository subjectRepository,
+            UserRepository userRepository,
+            FileStorageService fileStorageService) {
         this.homeworkRepository = homeworkRepository;
         this.submissionRepository = submissionRepository;
         this.homeworkAttachmentRepository = homeworkAttachmentRepository;
@@ -67,6 +67,7 @@ public class HomeworkService {
                 .toList();
     }
 
+    @SuppressWarnings("null")
     @Transactional(readOnly = true)
     public List<HomeworkDtos.HomeworkDto> listForStudent(Long userId) {
         User user = userRepository.findById(userId)
@@ -87,6 +88,7 @@ public class HomeworkService {
                 .toList();
     }
 
+    @SuppressWarnings("null")
     @Transactional
     public HomeworkDtos.HomeworkDto create(Long adminId, HomeworkDtos.CreateHomeworkRequest request) {
         User admin = userRepository.findById(adminId)
@@ -121,6 +123,7 @@ public class HomeworkService {
         return toDto(homework, new ArrayList<>(homework.getSubmissions()));
     }
 
+    @SuppressWarnings("null")
     @Transactional
     public void delete(Long homeworkId) {
         Homework homework = homeworkRepository.findById(homeworkId)
@@ -128,6 +131,7 @@ public class HomeworkService {
         homeworkRepository.delete(homework);
     }
 
+    @SuppressWarnings("null")
     @Transactional
     public HomeworkDtos.SubmissionDto submit(Long userId, Long homeworkId, String content, List<MultipartFile> files) {
         User user = userRepository.findById(userId)
@@ -146,7 +150,8 @@ public class HomeworkService {
         if (submission.getId() != null
                 && submission.getStatus() != null
                 && submission.getStatus() != HomeworkSubmissionStatus.NEEDS_REVISION) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "SUBMISSION_LOCKED", "Ответ уже отправлен, дождитесь проверки");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SUBMISSION_LOCKED",
+                    "Ответ уже отправлен, дождитесь проверки");
         }
 
         boolean hasText = hasMeaningfulText(content);
@@ -174,19 +179,25 @@ public class HomeworkService {
         return toDto(submission);
     }
 
+    @SuppressWarnings("null")
     @Transactional
-    public HomeworkDtos.SubmissionDto review(Long submissionId, HomeworkDtos.ReviewSubmissionRequest request) {
+    public HomeworkDtos.SubmissionDto review(Long adminId, Long submissionId,
+            HomeworkDtos.ReviewSubmissionRequest request) {
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Пользователь не найден"));
         HomeworkSubmission submission = submissionRepository.findById(submissionId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SUBMISSION_NOT_FOUND", "Работа не найдена"));
         HomeworkSubmissionStatus status = parseStatus(request.status());
         submission.setStatus(status);
         submission.setFeedback(request.feedback());
         submission.setGrade(request.grade());
+        submission.setReviewedBy(admin);
         submission.setUpdatedAt(Instant.now());
         submissionRepository.save(submission);
         return toDto(submission);
     }
 
+    @SuppressWarnings("null")
     @Transactional
     public HomeworkDtos.HomeworkDto addHomeworkAttachments(Long homeworkId, List<MultipartFile> files) {
         Homework homework = homeworkRepository.findById(homeworkId)
@@ -203,6 +214,7 @@ public class HomeworkService {
         return toDto(homework, new ArrayList<>(homework.getSubmissions()));
     }
 
+    @SuppressWarnings("null")
     @Transactional(readOnly = true)
     public FileDownload getHomeworkAttachment(Long attachmentId) {
         HomeworkAttachment attachment = homeworkAttachmentRepository.findById(attachmentId)
@@ -212,6 +224,7 @@ public class HomeworkService {
                 attachment.getOriginalName());
     }
 
+    @SuppressWarnings("null")
     @Transactional(readOnly = true)
     public FileDownload getSubmissionAttachment(Long userId, boolean isAdmin, Long attachmentId) {
         HomeworkSubmissionAttachment attachment = submissionAttachmentRepository.findById(attachmentId)
@@ -252,8 +265,7 @@ public class HomeworkService {
                 submissionDtos,
                 homework.getAttachments() == null
                         ? List.of()
-                        : homework.getAttachments().stream().map(this::toAttachmentDto).toList()
-        );
+                        : homework.getAttachments().stream().map(this::toAttachmentDto).toList());
     }
 
     private HomeworkDtos.SubmissionDto toDto(HomeworkSubmission submission) {
@@ -277,8 +289,7 @@ public class HomeworkService {
                 submission.getFeedback(),
                 submission.getAttachments() == null
                         ? List.of()
-                        : submission.getAttachments().stream().map(this::toAttachmentDto).toList()
-        );
+                        : submission.getAttachments().stream().map(this::toAttachmentDto).toList());
     }
 
     private HomeworkDtos.AttachmentDto toAttachmentDto(HomeworkAttachment attachment) {
@@ -288,8 +299,7 @@ public class HomeworkService {
                 attachment.getContentType(),
                 attachment.getSize(),
                 "/homework/attachments/" + attachment.getId() + "/download",
-                attachment.getUploadedAt()
-        );
+                attachment.getUploadedAt());
     }
 
     private HomeworkDtos.AttachmentDto toAttachmentDto(HomeworkSubmissionAttachment attachment) {
@@ -299,8 +309,7 @@ public class HomeworkService {
                 attachment.getContentType(),
                 attachment.getSize(),
                 "/homework/submissions/attachments/" + attachment.getId() + "/download",
-                attachment.getUploadedAt()
-        );
+                attachment.getUploadedAt());
     }
 
     private HomeworkAttachment storeHomeworkAttachment(Homework homework, MultipartFile file) {
@@ -335,5 +344,6 @@ public class HomeworkService {
         return !stripped.isEmpty();
     }
 
-    public record FileDownload(java.nio.file.Path path, String contentType, String originalName) {}
+    public record FileDownload(java.nio.file.Path path, String contentType, String originalName) {
+    }
 }

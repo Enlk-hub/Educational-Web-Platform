@@ -16,11 +16,22 @@ spring:
     multipart:
       max-file-size: 25MB
       max-request-size: 30MB
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope:
+              - email
+              - profile
 
 app:
   jwt:
     secret: ${JWT_SECRET:ChangeThisSecretForProdChangeThisSecret123}
     expiration-ms: 86400000 # 1 day
+
   storage:
     base-dir: ${STORAGE_BASE_DIR:src/components/files}
 

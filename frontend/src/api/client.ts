@@ -1,4 +1,4 @@
-import { Homework, Question, TestResult, User, VideoLesson, Subject, Submission } from '../types';
+import { Homework, Question, TestResult, User, VideoLesson, Subject, Submission, AdminStats, AdminNote, AuditLog } from '../types';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
 const TOKEN_KEY = 'entbridge_token';
@@ -14,6 +14,10 @@ export const getStoredUser = (): User | null => {
 export const storeAuth = (token: string, user: User) => {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(USER_KEY, JSON.stringify(user));
+};
+
+export const storeTokenOnly = (token: string) => {
+  localStorage.setItem(TOKEN_KEY, token);
 };
 
 export const clearAuth = () => {
@@ -157,6 +161,37 @@ export const api = {
         body: formData,
       });
     },
+    createVideo: (payload: { title: string; subjectId: string; youtubeUrl: string; description?: string; thumbnail?: string; duration?: string }) =>
+      request<VideoLesson>('/admin/videos', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    updateVideo: (videoId: string, payload: { title?: string; subjectId?: string; youtubeUrl?: string; description?: string; thumbnail?: string; duration?: string }) =>
+      request<VideoLesson>(`/admin/videos/${videoId}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }),
+    deleteVideo: (videoId: string) =>
+      request<{ message: string }>(`/admin/videos/${videoId}`, {
+        method: 'DELETE',
+      }),
+    getProfileStats: () => request<AdminStats>('/admin/profile/stats'),
+    getNotes: () => request<AdminNote[]>('/admin/profile/notes'),
+    createNote: (content: string) =>
+      request<AdminNote>('/admin/profile/notes', {
+        method: 'POST',
+        body: JSON.stringify({ content }),
+      }),
+    updateNote: (noteId: string, payload: { content?: string; completed?: boolean }) =>
+      request<AdminNote>(`/admin/profile/notes/${noteId}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }),
+    deleteNote: (noteId: string) =>
+      request<{ message: string }>(`/admin/profile/notes/${noteId}`, {
+        method: 'DELETE',
+      }),
+    getActivity: () => request<AuditLog[]>('/admin/profile/activity'),
   },
 };
 

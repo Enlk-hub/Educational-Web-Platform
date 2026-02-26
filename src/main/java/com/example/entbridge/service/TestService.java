@@ -10,6 +10,7 @@ import com.example.entbridge.repository.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.HttpStatus;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 import java.util.Map;
@@ -17,6 +18,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class TestService {
     private final QuestionRepository questionRepository;
     private final OptionRepository optionRepository;
@@ -27,12 +29,12 @@ public class TestService {
     private final QuestionMapper questionMapper;
 
     public TestService(QuestionRepository questionRepository,
-                       OptionRepository optionRepository,
-                       TestResultRepository testResultRepository,
-                       UserRepository userRepository,
-                       SubjectRepository subjectRepository,
-                       TestResultMapper testResultMapper,
-                       QuestionMapper questionMapper) {
+            OptionRepository optionRepository,
+            TestResultRepository testResultRepository,
+            UserRepository userRepository,
+            SubjectRepository subjectRepository,
+            TestResultMapper testResultMapper,
+            QuestionMapper questionMapper) {
         this.questionRepository = questionRepository;
         this.optionRepository = optionRepository;
         this.testResultRepository = testResultRepository;
@@ -44,35 +46,43 @@ public class TestService {
 
     @Transactional
     public TestDtos.ResultDto submit(Long userId, TestDtos.SubmitRequest request) {
+        log.info("Test submission attempt by user {} for subject code {}", userId, request.subjectId());
         Subject subject = subjectRepository.findByCode(request.subjectId())
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SUBJECT_NOT_FOUND", "Предмет не найден"));
+                .orElseThrow(() -> {
+                    log.error("Test submission failed: subject with code {} not found", request.subjectId());
+                    return new ApiException(HttpStatus.NOT_FOUND, "SUBJECT_NOT_FOUND", "Предмет не найден");
+                });
         List<Question> questions = questionRepository.findBySubject_CodeOrderByIdAsc(subject.getCode());
         if (questions.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "NO_QUESTIONS", "В этом предмете нет вопросов");
         }
 
-        Map<Long, Question> questionMap = questions.stream()
+        questions.stream()
                 .collect(Collectors.toMap(Question::getId, Function.identity()));
 
+        Map<String, String> userAnswers = request.answers().stream()
+                .filter(a -> a.selectedOptionId() != null && !a.selectedOptionId().isBlank())
+                .collect(Collectors.toMap(TestDtos.Answer::questionId, TestDtos.Answer::selectedOptionId,
+                        (a1, a2) -> a1));
+
         int correctAnswers = 0;
-        for (TestDtos.Answer answer : request.answers()) {
-            Long questionId = parseId(answer.questionId(), "QUESTION_ID_INVALID");
-            if (answer.selectedOptionId() == null || answer.selectedOptionId().isBlank()) {
-                continue;
-            }
-            Long optionId = parseId(answer.selectedOptionId(), "OPTION_ID_INVALID");
-            Question question = questionMap.get(questionId);
-            if (question == null) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "QUESTION_NOT_FOUND", "Вопрос не найден в выбранном предмете");
-            }
-            Option option = optionRepository.findById(optionId)
-                    .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "OPTION_NOT_FOUND", "Вариант ответа не найден"));
-            if (!option.getQuestion().getId().equals(questionId)) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "OPTION_MISMATCH", "Ответ не соответствует вопросу");
-            }
-            if (Boolean.TRUE.equals(option.getIsCorrect())) {
+        List<TestDtos.AnswerResultDto> evaluatedAnswers = new java.util.ArrayList<>();
+
+        for (Question question : questions) {
+            String qId = question.getId().toString();
+            String selectedOptId = userAnswers.get(qId);
+            boolean isCorrect = false;
+
+            String correctOptId = question.getOptions().stream()
+                    .filter(o -> Boolean.TRUE.equals(o.getIsCorrect()))
+                    .map(o -> o.getId().toString())
+                    .findFirst().orElse(null);
+
+            if (selectedOptId != null && selectedOptId.equals(correctOptId)) {
+                isCorrect = true;
                 correctAnswers++;
             }
+            evaluatedAnswers.add(new TestDtos.AnswerResultDto(qId, selectedOptId, isCorrect, correctOptId));
         }
 
         int totalQuestions = questions.size();
@@ -80,6 +90,7 @@ public class TestService {
         // Масштабируем результат под максимальный балл предмета.
         int score = (int) Math.round((double) correctAnswers * maxScore / totalQuestions);
 
+        @SuppressWarnings("null")
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Пользователь не найден"));
 
@@ -90,7 +101,7 @@ public class TestService {
         tr.setMaxScore(maxScore);
         tr.setTotalQuestions(totalQuestions);
         tr.setCorrectAnswers(correctAnswers);
-        testResultRepository.save(tr);
+        tr = testResultRepository.save(tr);
 
         // update user stats
         int totalScore = (user.getTotalScore() == null ? 0 : user.getTotalScore()) + score;
@@ -100,7 +111,13 @@ public class TestService {
         user.setAverageScore(avg);
         userRepository.save(user);
 
-        return testResultMapper.toDto(tr);
+        log.info("Test submitted successfully by user {}. Score: {}/{}", userId, score, maxScore);
+
+        TestDtos.ResultDto dto = testResultMapper.toDto(tr);
+        return new TestDtos.ResultDto(
+                dto.id(), dto.userId(), dto.subjectId(), dto.subjectName(),
+                dto.score(), dto.maxScore(), dto.totalQuestions(), dto.correctAnswers(), dto.date(),
+                evaluatedAnswers);
     }
 
     public List<QuestionDto> questions(String subjectCode) {

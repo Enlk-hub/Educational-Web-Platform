@@ -26,4 +26,11 @@ public class SubjectController {
     public List<SubjectDto> list() {
         return subjectRepository.findAll(Sort.by("id")).stream().map(mapper::toDto).collect(Collectors.toList());
     }
+
+    @GetMapping("/search")
+    public List<SubjectDto> search(@org.springframework.web.bind.annotation.RequestParam String query) {
+        return subjectRepository.findByNameContainingIgnoreCase(query).stream()
+                .map(mapper::toDto)
+                .collect(Collectors.toList());
+    }
 }

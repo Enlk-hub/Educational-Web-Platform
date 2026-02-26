@@ -40,6 +40,10 @@ public class HomeworkSubmission {
     @Column(name = "updated_at")
     private Instant updatedAt = Instant.now();
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reviewed_by")
+    private User reviewedBy;
+
     @OneToMany(mappedBy = "submission", cascade = CascadeType.ALL, orphanRemoval = true)
     private java.util.List<HomeworkSubmissionAttachment> attachments = new java.util.ArrayList<>();
 }

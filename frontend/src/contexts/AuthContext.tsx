@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User } from '../types';
-import { api, clearAuth, getStoredToken, getStoredUser, storeAuth } from '../api/client';
+import { api, clearAuth, getStoredToken, getStoredUser, storeAuth, storeTokenOnly } from '../api/client';
 
 interface AuthContextType {
   user: User | null;
@@ -8,6 +8,7 @@ interface AuthContextType {
   register: (name: string, email: string, username: string, password: string) => Promise<boolean>;
   logout: () => void;
   updateProfile: (updates: Pick<User, 'name' | 'email'>) => Promise<User | null>;
+  loginWithToken: (token: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -71,8 +72,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const loginWithToken = async (token: string): Promise<boolean> => {
+    try {
+      storeTokenOnly(token); // Store token temporarily to make the request
+      const user = await api.getMe();
+      storeAuth(token, user); // Store both
+      setUser(user);
+      return true;
+    } catch {
+      clearAuth();
+      return false;
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, updateProfile }}>
+    <AuthContext.Provider value={{ user, login, register, logout, updateProfile, loginWithToken }}>
       {children}
     </AuthContext.Provider>
   );

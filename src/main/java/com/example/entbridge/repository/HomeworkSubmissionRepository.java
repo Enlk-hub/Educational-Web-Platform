@@ -10,11 +10,13 @@ import java.util.List;
 import java.util.Optional;
 
 public interface HomeworkSubmissionRepository extends JpaRepository<HomeworkSubmission, Long> {
-    @EntityGraph(attributePaths = {"homework", "user"})
+    @EntityGraph(attributePaths = { "homework", "user" })
     List<HomeworkSubmission> findByUser(User user);
 
-    @EntityGraph(attributePaths = {"homework", "user"})
+    @EntityGraph(attributePaths = { "homework", "user" })
     List<HomeworkSubmission> findByHomeworkIn(List<Homework> homework);
 
     Optional<HomeworkSubmission> findByHomeworkAndUser(Homework homework, User user);
+
+    long countByReviewedBy(User admin);
 }
